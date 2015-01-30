@@ -1,0 +1,20 @@
+template(name='search_queue')
+	.panel.panel-default
+		.panel-heading Search Queue
+		table.table
+			thead
+				tr
+					th Time
+					th Task
+					th Progression
+			tbody
+				each searchQueue
+					+search_queue_item
+
+template(name='search_queue_item')
+	tr
+		td #{displayCreated}
+		td #{taskDescription}
+		td
+			.progress
+				.progress-bar(role='progressbar', aria-valuenow="#{progress.percent}", aria-valuemin='0', aria-valuemax='100', style="width: #{progress.percent}%;") #{progress.percent}%
