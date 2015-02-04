@@ -42,16 +42,20 @@ Meteor.startup ->
 				job.progress 90, 100
 				console.log "extract ok: #{url}"
 			catch e
-				job.fail "Error from googleapis: #{e}", { fatal: true }
+				job.fail "Error from alchemy api: #{e}", { fatal: true }
 				return cb()
 
-			AlchemyApiUrlgetrelsCache.insert _.extend({ response: response }, params)
+			cache = AlchemyApiUrlgetrelsCache.insert _.extend({ response: response }, params)
 			console.log "insert cache ok: #{url}"
 
-		# TODO: create Neo4J entities/relations
+		Searches.update({ _id: search._id, 'items.link': url },
+			$set:
+				'items.$._alchemyCacheId': cache._id
+				'items.$._alchemyResponse': cache.response
+		)
+		console.log "update item ok: #{url}"
 
-		Searches.update({ _id: search._id }, { $set: { items: response.items }})
-		console.log "set items ok: #{url}"
+		# TODO: create Neo4J entities/relations
 
 		job.done()
 		cb()

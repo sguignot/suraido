@@ -25,4 +25,4 @@ ostrio:neo4jdriver
 ostrio:neo4jreactivity
 http
 mquandalle:jade
-mquandalle:moment
+momentjs:moment
