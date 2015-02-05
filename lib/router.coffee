@@ -10,10 +10,13 @@ Router.map ->
 	@route 'home',
 		path: '/'
 		waitOn: ->
-			[
-				Meteor.subscribe 'searchQueue'
-				Meteor.subscribe 'searches'
-			]
+			if Meteor.user()
+				return [
+					Meteor.subscribe 'searchQueue'
+					Meteor.subscribe 'searches'
+				]
+			else
+				return []
 		data:
 			searchQueue: ->
 				SearchQueue.find({}, {sort: {created: -1}}).fetch()

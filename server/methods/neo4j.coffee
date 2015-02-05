@@ -1,3 +1,5 @@
 Meteor.neo4j.methods
 	getNodesAndEdges: () ->
-		return  'MATCH (a)-[r:`ACTED_IN`]->(b) RETURN a,b,r'
+		return 'MATCH (a)-[r]->(b) RETURN a,b,r'
+	# testAddPlayer: ->
+	# 	return 'CREATE (a:Player {name: {userName}, score: 0})'
