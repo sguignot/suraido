@@ -2,8 +2,8 @@ Meteor.startup ->
 
 	worker = (job, cb) ->
 		search = Searches.findOne(_id: job.data.searchId)
-
 		url = job.data.itemLink
+		docKey = Neo4jUtils.escapeCypherValue url
 
 		# doc: http://www.alchemyapi.com/api/relation/urls.html
 		params =
@@ -25,7 +25,6 @@ Meteor.startup ->
 		if cache?
 			cacheId = cache._id
 			response = cache.response
-			job.progress 90, 100
 			console.log "alchemy request cached: #{url}"
 		else
 			# Alchemy API uses 1/0 instead of true/false
@@ -40,7 +39,6 @@ Meteor.startup ->
 					params: _.extend({ apikey: ALCHEMY_API_KEY }, alchemyParams)
 				)
 				response = CollectionUtils.fixKeysForMongo(result.data)
-				job.progress 90, 100
 				console.log "extract ok: #{url}"
 			catch e
 				job.fail "Error from alchemy api: #{e}", { fatal: true }
@@ -49,23 +47,33 @@ Meteor.startup ->
 			cacheId = AlchemyApiUrlgetrelsCache.insert _.extend({ response: response }, params)
 			console.log "insert cache ok: #{url}"
 
-		res = Searches.update({ _id: search._id, 'items.link': url },
-			$set:
-				'items.$._alchemyCacheId': cacheId
-				'items.$._alchemyResponse': response
-		)
-		console.log "update item ok: #{url}"
+		# Too slow!
+		# res = Searches.update({ _id: search._id, 'items.link': url },
+		# 	$set:
+		# 		'items.$._alchemyCacheId': cacheId
+		# 		'items.$._alchemyResponse': response
+		# )
+		# console.log "update item ok: #{url}"
+
+		if response.relations? and response.relations.length > 0
+			progressCompleted = 5
+			progressTotal = progressCompleted + 5 * response.relations.length
+			job.progress progressCompleted, progressTotal
 
 		# create Neo4J entities/relations
-		for rel in response.relations
+		subjectLabels = 'NLP:Subject'
+		objectLabels = 'NLP:Object'
+		for rel, relIdx in response.relations
 			continue unless rel.subject? and rel.object? # TODO: log warning?
 			nodeKeys = for node in [rel.subject, rel.object]
-				nodeType = if node is rel.subject then 'AlchemySubject' else 'AlchemyObject'
+				nodeType = if node is rel.subject then subjectLabels else objectLabels
 				nodeText = Neo4jUtils.escapeCypherValue node.text
-				nodeKey = nodeText
-				query = "MERGE (node:#{nodeType} {key: #{nodeKey}}) SET node.name = #{nodeText}"
+				nodeKey = Neo4jUtils.escapeCypherValue "#{url}|#{relIdx}|#{node.text}"
+				query = "MERGE (n:#{nodeType} {key: #{nodeKey}}) SET n.name = #{nodeText}"
 				console.log "neo4j query: #{query}"
 				Meteor.neo4j.query query
+				progressCompleted += 1
+				job.progress progressCompleted, progressTotal
 
 				id = Neo4jUtils.nextCypherId()
 				nodeId = id
@@ -75,21 +83,23 @@ Meteor.startup ->
 				for e in node.entities or []
 					id = Neo4jUtils.nextCypherId(id)
 					entityType = e.type
+					labels = [entityType, 'Entity']
 					entityName = if e.disambiguated? then e.disambiguated.name else e.text
 					entityKey = Neo4jUtils.escapeCypherValue "#{entityType}|#{entityName}"
+
+					reservedProps = ['key', 'text']
+					ignoredProps = ['name', 'subType']
 					props =
 						text: e.text
 						name: entityName
-
 					if e.disambiguated?
 						d = e.disambiguated
-						#TODO props.subTypes = d.subType
-						#TODO add missing props
-						props.dbpedia = d.dbpedia
-						props.freebase = d.freebase
-						props.opencyc = d.opencyc
-						props.yago = d.yago
-						props.ciaFactbook = d.ciaFactbook
+						labels += d.subType
+						for prop, val of e.disambiguated
+							if _.include(reservedProps, prop)
+								console.warn "Cannot set property with reserved name: #{prop}", e
+							else if !_.include(ignoredProps, prop)
+								props[prop] = val
 
 					set = 'SET'
 					setAssignments = for prop, val of props
@@ -120,8 +130,10 @@ Meteor.startup ->
 					query += merges.join(' ')
 					console.log "neo4j query: #{query}"
 					Meteor.neo4j.query query
+					progressCompleted += 1
+					job.progress progressCompleted, progressTotal
 				else
-					console.warn "empty node: %o", node
+					console.warn "empty node: ", node
 
 				nodeKey
 
@@ -131,12 +143,18 @@ Meteor.startup ->
 			# action
 			a = rel.action
 			relType = Neo4jUtils.escapeCypherIdentifier a.lemmatized
-			escapedActionText = Neo4jUtils.escapeCypherValue a.text
-			escapedActionTense = Neo4jUtils.escapeCypherValue a.verb.tense
-			query = "MATCH (s:AlchemySubject {key: #{subjectKey}}),(o:AlchemyObject {key: #{objectKey}}) "+
-				"MERGE (s)-[:#{relType} {text: #{escapedActionText}, tense: #{escapedActionTense}}]->(o)"
+			actionText = Neo4jUtils.escapeCypherValue a.text
+			actionVerb = Neo4jUtils.escapeCypherValue a.verb.text
+			actionTense = Neo4jUtils.escapeCypherValue a.verb.tense
+			# TODO: negated
+			query = "MATCH (doc:Document {key: #{docKey}}),(s:#{subjectLabels} {key: #{subjectKey}}),(o:#{objectLabels} {key: #{objectKey}}) "+
+				"MERGE (doc)-[:INCLUDES]->(s) "+
+				"MERGE (doc)-[:INCLUDES]->(o) "+
+				"MERGE (s)-[:#{relType} {text: #{actionText}, verb: #{actionVerb}, tense: #{actionTense}}]->(o)"
 			console.log "neo4j query: #{query}"
 			Meteor.neo4j.query query
+			progressCompleted += 1
+			job.progress progressCompleted, progressTotal
 
 		job.done()
 		cb()

@@ -16,6 +16,10 @@ Searches.attachSchema new SimpleSchema(
 	num:
 		type: Number
 		defaultValue: 10
+		allowedValues: [10, 20, 30, 40]
+	lr:
+		type: String
+		defaultValue: 'lang_en'
 	items:
 		type: [Object]
 		optional: true

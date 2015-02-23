@@ -15,6 +15,8 @@ GoogleCseApiCache.attachSchema new SimpleSchema(
 		type: Number
 	filter:
 		type: String
+	lr:
+		type: String
 	response:
 		type: Object
 		blackbox: true

@@ -5,8 +5,11 @@ Template.search_queue_item.helpers(
 			when 'googleSearchJob'
 				search = Searches.findOne(_id: @data.searchId)
 				if search?
-					"Search '#{search.q}'"
+					"Search '#{search.q}' (#{search.num} results)"
 				else
 					"Search ?"
 		return taskDesc
+
+	progressPercent: ->
+		Math.floor @progress.percent
 )
